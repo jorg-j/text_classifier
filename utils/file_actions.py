@@ -1,12 +1,8 @@
 import json
 import csv
-import logging
+from loguru import logger
 
-logging.basicConfig(
-    encoding='utf-8',
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)s: %(name)s: Line: %(lineno)s - %(funcName)s(): %(message)s",
-)
+logger.add("logs.log", retention="1 week")
 
 def save_freqs_to_file(word_freqs, label_freqs, file_path):
     """
@@ -34,11 +30,18 @@ def csv_to_dict(filename):
     return result
 
 def import_training_data(filename):
-    with open(filename, newline='') as csvfile:
-        reader = csv.reader(csvfile)
-        texts = []
-        labels = []
-        for row in reader:
-            texts.append(row[0])
-            labels.append(row[1])
+    try:
+        with open(filename, newline='') as csvfile:
+            reader = csv.reader(csvfile)
+            texts = []
+            labels = []
+            for row in reader:
+                texts.append(row[0])
+                labels.append(row[1])
+    except FileNotFoundError:
+        logger.warning(f"No {filename} file found... Creating a blank")
+        with open(filename, "w+")as f:
+            f.write("Example Text,Example_Label")
+        texts, labels = import_training_data(filename)
+
     return texts, labels

@@ -1,9 +1,12 @@
 import csv
 import json
-import logging
 import re
 import string
 from collections import defaultdict
+from loguru import logger
+
+logger.add("logs.log", retention="1 week")
+
 
 from utils.file_actions import (
     csv_to_dict,
@@ -14,18 +17,14 @@ from utils.file_actions import (
 
 from utils.text_normalisation import contractions, stem_sentence
 
-logging.basicConfig(
-    encoding="utf-8",
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)s: %(name)s: Line: %(lineno)s - %(funcName)s(): %(message)s",
-)
 
 
 def train(texts, labels):
     """
     Train a Naive Bayes classifier on a list of texts and labels.
     """
-    logging.info("Training text and labels")
+
+    logger.info("Training text and labels")
     word_freqs = defaultdict(lambda: defaultdict(int))
     label_freqs = defaultdict(int)
 
@@ -58,6 +57,12 @@ def preprocess(text):
         "an",
         "the",
     ]
+    try:
+        with open("banned.txt", "r")as f:
+            banned = f.read().splitlines()
+        conduction_words.extend(banned)
+    except:
+        pass
 
     words = text.split()
     filtered_words = [word for word in words if word not in conduction_words]
@@ -68,7 +73,7 @@ def predict(text, word_freqs, label_freqs, word_boosts):
     """
     Predict the label of a text using a Naive Bayes classifier with word boosts for specific labels.
     """
-    logging.info("Predicting")
+    logger.info("Predicting")
     words = preprocess(text)
     scores = {
         label: label_freqs[label] / sum(label_freqs.values()) for label in label_freqs
@@ -77,30 +82,26 @@ def predict(text, word_freqs, label_freqs, word_boosts):
     for word in words:
         if word in word_freqs:
             for label in label_freqs:
+                a = word in word_boosts
                 try:
-                    if word in word_boosts.get(label, []):
+                    if word not in word_boosts:
                         # Apply a boost to the score for this label
-                        scores[label] *= (
-                            (word_freqs[word][label] + 1)
-                            * 2
-                            / (sum(word_freqs[word].values()) + len(word_freqs))
-                        )
+                        apply = (word_freqs[word][label] + 1)* 2 / (sum(word_freqs[word].values()) + len(word_freqs))
+                        scores[label] *= apply
                     else:
-                        scores[label] *= (word_freqs[word][label] + 1) / (
-                            sum(word_freqs[word].values()) + len(word_freqs)
-                        )
+                        apply = (word_freqs[word][label] + 1) / (sum(word_freqs[word].values()) + len(word_freqs))
+                        scores[label] *= apply
                 except:
                     pass
-    logging.debug(scores)
+    logger.debug(max(scores, key=scores.get))
     return max(scores, key=scores.get)
 
 
-def training_mode(phrase, result):
+def training_mode(phrase, result, items):
     print("\n\n\n")
-    print(phrase)
-    print(result)
+    logger.info(f"Training Phrase: {phrase}")
+    logger.info(f"Original Result: {result}")
 
-    items = ["normal", "cake"]
     print("Select an item from the list:")
     for i, item in enumerate(items):
         print(f"{i+1}. {item}")
@@ -120,11 +121,12 @@ def training_mode(phrase, result):
     # Print the selected item
     print(f"You selected: {items[choice-1]}")
     result = items[choice - 1]
+    logger.info(f"User Selected: {result}")
     return result
 
 
 def process_string(phrase, boosts):
-    logging.info(f"Processing: {phrase}")
+    logger.info(f"Processing: {phrase}")
     train_mode = False
 
     texts, labels = import_training_data("training_data.csv")
@@ -133,25 +135,34 @@ def process_string(phrase, boosts):
     # Save the Frequencies to JSON
     save_freqs_to_file(word_freqs, label_freqs, "freqs.json")
 
-    logging.info(f"Training Mode: {train_mode}")
+    logger.info(f"Training Mode: {train_mode}")
     result = predict(phrase, word_freqs, label_freqs, boosts)
-    logging.info(f"{phrase}: {result}")
+    logger.info(f"{phrase}: {result}")
 
     if train_mode:
+        logger.info("Training Mode is Active")
+        normalised_labels = list(set(labels))
         phrase = phrase.replace(",", "").replace("\n", "")
-        # result = training_mode(phrase, result)
-        result = "advertising"
+        result = training_mode(phrase, result, normalised_labels)
+
         with open("training_data.csv", "a+") as f:
             f.write(f"{phrase},{result}\n")
 
 
-logging.info("Loading Boosts")
-boosts = csv_to_dict("boost.csv")
-logging.debug(boosts)
+def main():
+    logger.info("Loading Boosts")
+    boosts = csv_to_dict("boost.csv")
+    logger.debug(boosts)
 
+    try:
+        with open("data_in.csv", "r") as f:
+            data = f.readlines()
+    except FileNotFoundError:
+        print("File: data_in.csv is not found")
+        data = []
 
-with open("data_in.csv", "r") as f:
-    data = f.readlines()
+    for line in data:
+        process_string(line, boosts)
 
-for line in data:
-    process_string(line, boosts)
+if __name__ == "__main__":
+    main()
